@@ -1,17 +1,13 @@
-const beautify = require("js-beautify").html;
 const child = require("child_process");
-const detectIndent = require("detect-indent");
 const dottie = require("dottie");
 const flattenDeep = require("lodash.flattendeep");
 const fs = require("fs");
 const list = require("./util").list;
 const log = require("./util").log;
 const path = require("path");
-const plist = require("plist");
 const pSettle = require("p-settle");
 const resolveFrom = require("resolve-from");
 const semver = require("semver");
-const stripIndents = require("common-tags/lib/stripIndents");
 const unique = require("lodash.uniq");
 const Xcode = require("pbxproj-dom/xcode").Xcode;
 
@@ -392,7 +388,6 @@ function version(program, projectPath) {
 
 				const projectFolder = path.join(programOpts.ios, xcodeProjects[0]);
 				const xcode = Xcode.open(path.join(projectFolder, "project.pbxproj"));
-				const plistFilenames = getPlistFilenames(xcode);
 
 				xcode.document.projects.forEach(project => {
 					!programOpts.neverIncrementBuild &&
@@ -411,83 +406,18 @@ function version(program, projectPath) {
 											appPkg.version,
 											programOpts.resetBuild
 										);
+										const MARKETING_VERSION = getCFBundleShortVersionString(appPkg.version);
 
 										config.patch({
 											buildSettings: {
-												CURRENT_PROJECT_VERSION
+												CURRENT_PROJECT_VERSION,
+												MARKETING_VERSION
 											}
 										});
 									}
 								}
 							);
 						});
-
-					const plistFiles = plistFilenames.map(filename => {
-						return fs.readFileSync(
-							path.join(programOpts.ios, filename),
-							"utf8"
-						);
-					});
-
-					const parsedPlistFiles = plistFiles.map(file => {
-						return plist.parse(file);
-					});
-
-					parsedPlistFiles.forEach((json, index) => {
-						fs.writeFileSync(
-							path.join(programOpts.ios, plistFilenames[index]),
-							plist.build(
-								Object.assign(
-									{},
-									json,
-									!programOpts.incrementBuild
-										? {
-												CFBundleShortVersionString: getCFBundleShortVersionString(
-													appPkg.version
-												)
-										  }
-										: {},
-									!programOpts.neverIncrementBuild
-										? {
-												CFBundleVersion: getNewVersionCode(
-													programOpts,
-													parseInt(json.CFBundleVersion, 10),
-													appPkg.version,
-													programOpts.resetBuild
-												).toString()
-										  }
-										: {}
-								)
-							)
-						);
-					});
-
-					plistFilenames.forEach((filename, index) => {
-						const indent = detectIndent(plistFiles[index]);
-
-						fs.writeFileSync(
-							path.join(programOpts.ios, filename),
-							stripIndents`
-							<?xml version="1.0" encoding="UTF-8"?>
-							<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-							<plist version="1.0">` +
-								"\n" +
-								beautify(
-									fs
-										.readFileSync(path.join(programOpts.ios, filename), "utf8")
-										.match(/<dict>[\s\S]*<\/dict>/)[0],
-									Object.assign(
-										{ end_with_newline: true },
-										indent.type === "tab"
-											? { indent_with_tabs: true }
-											: { indent_size: indent.amount }
-									)
-								) +
-								stripIndents`
-							</plist>` +
-								"\n"
-						);
-					});
 				});
 
 				xcode.save();
